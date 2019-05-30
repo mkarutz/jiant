@@ -7,3 +7,5 @@ user_config.sh
 .idea
 .ipynb_checkpoints/
 perluniprops/
+data/
+project/

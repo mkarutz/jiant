@@ -12,10 +12,9 @@
 # this script can take a while to run.
 
 JIANT_DATA_DIR=${1:-"$HOME/glue_data"}  # path to glue_data directory
-
 ## Configure these for your environment ##
-PATH_TO_ONTONOTES="/nfs/jsalt/home/iftenney/ontonotes/ontonotes/conll-formatted-ontonotes-5.0"
-PATH_TO_SPR1_RUDINGER="/nfs/jsalt/home/iftenney/decomp.net/spr1"
+PATH_TO_ONTONOTES="/home/mkarutz/datasets/ontonotes/conll-formatted-ontonotes-5.0"
+PATH_TO_SPR1_RUDINGER="/home/mkarutz/datasets/spr1"
 
 ## Don't modify below this line. ##
 
@@ -95,14 +94,14 @@ function get_ud() {
 function get_semeval() {
     ## SemEval 2010 Task 8 relation classification
     ## Gives semeval/{split}.json, where split = {train.0.85, dev, test}
-    mkdir $OUTPUT_DIR/semeval
+    mkdir -p $OUTPUT_DIR/semeval
     bash $HERE/data/get_semeval_data.sh $OUTPUT_DIR/semeval
     preproc_task $OUTPUT_DIR/semeval
 }
 
-get_ontonotes
-get_spr_dpr
-get_ud
+# get_ontonotes
+# get_spr_dpr
+# get_ud
 
 get_semeval
 

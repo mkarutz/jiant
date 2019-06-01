@@ -456,6 +456,7 @@ def get_tasks(args):
     tasks = []
     for name in task_names:
         task = _get_task(name, args, data_path=data_path, scratch_path=scratch_path)
+        # task.load_data()
         tasks.append(task)
 
         # Count examples, store in example_counts.

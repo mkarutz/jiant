@@ -181,6 +181,7 @@ def main(args):
     for split in args.splits:
         for task in args.tasks:
             source_path = os.path.join(args.ontonotes, "data", split)
+            print('########### Reading ontonotes split from', source_path)
             ontonotes_reader = ontonotes.dataset_iterator(file_path=source_path)
 
             log.info("Processing split '%s' for task '%s'", split, task)

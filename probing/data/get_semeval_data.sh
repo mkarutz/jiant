@@ -27,7 +27,7 @@ function fetch_data() {
   popd
 }
 
-fetch_data
+# fetch_data
 
 # Convert SemEval to edge probing format.
 TRAIN_SOURCE="$TARGET_DIR/raw/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"

@@ -262,6 +262,18 @@ class EdgeProbingTask(Task):
 # can group these in the code.
 ##
 
+register_task(
+    "edges-pos-test",
+    rel_path="edges/ontonotes/const/pos",
+    label_file="labels.txt",
+    files_by_split={
+        "train": "toy.json",
+        "val": "toy.json",
+        "test": "toy.json",
+    },
+    single_sided=True,
+)(EdgeProbingTask)
+
 
 ##
 # Core probing tasks. as featured in the paper.

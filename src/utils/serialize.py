@@ -5,10 +5,10 @@
 import _pickle as pkl
 import base64
 from zlib import crc32
-
+from tqdm import tqdm
 
 def _serialize(examples, fd, flush_every):
-    for i, example in enumerate(examples):
+    for i, example in tqdm(enumerate(examples), "Serializing"):
         blob = pkl.dumps(example)
         encoded = base64.b64encode(blob)
         fd.write(encoded)

@@ -65,6 +65,7 @@ from .utils.utils import (
     get_elmo_mixing_weights,
     maybe_make_dir,
 )
+from .count2vec.count2vec_embedder import Count2VecTokenEmbedder
 
 # Elmo stuff
 # Look in $ELMO_SRC_DIR (e.g. /usr/share/jsalt/elmo) or download from web
@@ -456,6 +457,12 @@ def build_embeddings(args, vocab, tasks, pretrained_embs=None):
             d_emb += 1024
 
         token_embedders["elmo"] = elmo_embedder
+
+    if args.count2vec:
+        log.info("Using Count2Vec!")
+        count2vec_embedder = Count2VecTokenEmbedder()
+        d_emb += count2vec_embedder.get_output_dim()
+        token_embedders["count2vec"] = count2vec_embedder
 
     # Wrap ELMo and other embedders, and concatenates the resulting
     # representations alone the last (vector) dimension.

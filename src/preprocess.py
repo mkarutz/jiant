@@ -17,10 +17,15 @@ import logging as log
 import os
 import sys
 from collections import defaultdict
+from typing import Iterable, Type, Union
+from pprint import pprint
+from tqdm import tqdm
+
+from allennlp.data import Instance
 
 import numpy as np
 import torch
-from allennlp.data import Vocabulary
+from allennlp.data import Vocabulary, Instance
 from allennlp.data.token_indexers import (
     ELMoTokenCharactersIndexer,
     SingleIdTokenIndexer,
@@ -31,6 +36,7 @@ from .tasks import ALL_COLA_NPI_TASKS, ALL_GLUE_TASKS, ALL_NLI_PROBING_TASKS, AL
 from .tasks import REGISTRY as TASKS_REGISTRY
 from .tasks.mt import MTTask
 from .utils import config, serialize, utils
+from .count2vec.cstlm_token_indexer import Count2VecIndexer
 
 # NOTE: these are not that same as AllenNLP SOS, EOS tokens
 SOS_TOK, EOS_TOK = "<SOS>", "<EOS>"
@@ -66,7 +72,7 @@ def _get_instance_generator(task_name, split, preproc_dir, fraction=None):
     return serialize.read_records(filename, repeatable=True, fraction=fraction)
 
 
-def _indexed_instance_generator(instance_iter, vocab):
+def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab, n_workers=12):
     """Yield indexed instances. Instances are modified in-place.
 
     TODO(iftenney): multiprocess the $%^& out of this.
@@ -78,11 +84,64 @@ def _indexed_instance_generator(instance_iter, vocab):
     Yields:
         Instance with indexed fields.
     """
-    for instance in instance_iter:
-        instance.index_fields(vocab)
-        # Strip token fields to save memory and disk.
-        del_field_tokens(instance)
-        yield instance
+    from multiprocessing import Process, Queue
+
+    def do_producer(queue_in):
+        for instance in instance_iter:
+            queue_in.put(instance)
+        for _ in range(n_workers):
+            queue_in.put(None)
+
+    def do_consumer(queue_in, queue_out):
+        while True:
+            instance = queue_in.get()
+            if instance is None:
+                break
+            instance.index_fields(vocab)
+            del_field_tokens(instance)
+            queue_out.put(instance)
+        queue_out.put(None)
+
+    def do_logger(queue_in, queue_out):
+        progress = tqdm(None, "Processing")
+        done = 0
+        while done < n_workers:
+            instance = queue_in.get()
+            if instance is None:
+                done += 1
+            else:
+                queue_out.put(instance)
+                progress.update()
+        queue_out.put(None)
+
+    queue_in, queue_mid, queue_out = (
+        Queue(maxsize=(8 * n_workers)),
+        Queue(), 
+        Queue()
+    )
+
+    producer = Process(target=do_producer, args=(queue_in,))
+    consumers = [
+        Process(target=do_consumer, args=(queue_in, queue_mid)) for _ in range(n_workers)
+    ]
+    logger = Process(target=do_logger, args=(queue_mid, queue_out))
+
+    producer.start()
+    logger.start()
+    for consumer in consumers:
+        consumer.start()
+
+    while True:
+        instance = queue_out.get()
+        if instance is None:
+            break
+        else:
+            yield instance
+
+    for consumer in consumers:
+        consumer.join()
+    producer.join()
+    logger.join()
 
 
 def del_field_tokens(instance):
@@ -138,6 +197,7 @@ def _index_split(task, split, indexers, vocab, record_file):
     instance_iter = _counter_iter(instance_iter)
 
     # Actually call generators and stream to disk.
+    log.info("Indexing...")
     serialize.write_records(_indexed_instance_generator(instance_iter, vocab), record_file)
     log.info("%s: Saved %d instances to %s", log_prefix, _instance_counter, record_file)
 
@@ -222,7 +282,8 @@ def _build_vocab(args, tasks, vocab_path: str):
     if args.bert_model_name:
         # Add pre-computed BPE vocabulary for BERT model.
         add_bert_wpm_vocab(vocab, args.bert_model_name)
-
+    if args.count2vec:
+        add_count2vec_vocab(vocab, args.count2vec_collection_dir_path)
     vocab.save_to_files(vocab_path)
     log.info("\tSaved vocab to %s", vocab_path)
     #  del word2freq, char2freq, target2freq
@@ -232,6 +293,25 @@ def build_indexers(args):
     indexers = {}
     if not args.word_embs == "none":
         indexers["words"] = SingleIdTokenIndexer()
+    if args.count2vec:
+        assert args.count2vec_collection_dir_path is not None, (
+            'Count2Vec collection path not given.'
+        )
+        assert os.path.exists(args.count2vec_collection_dir_path), (
+            'Count2Vec collection path "' + args.count2vec_collection_dir_path + '" does not exists.'
+        )
+        collection_dir = args.count2vec_collection_dir_path
+        reversed_collection_dir = (
+            args.count2vec_reversed_collection_dir_path or collection_dir + '-reversed'
+        )
+        assert os.path.exists(reversed_collection_dir), (
+            'Count2Vec collection path "' + reversed_collection_dir + '" does not exists.'
+        )
+        indexers["count2vec"] = Count2VecIndexer(
+            "count2vec",
+            collection_dir,
+            reversed_collection_dir,
+        )
     if args.elmo:
         indexers["elmo"] = ELMoTokenCharactersIndexer("elmo")
         assert args.tokenizer in {"", "MosesTokenizer"}
@@ -596,3 +676,23 @@ def add_wsj_vocab(vocab, data_dir, namespace="tokens"):
     for line in wsj_tokens.readlines():
         vocab.add_token_to_namespace(line.strip(), namespace)
     log.info("\tAdded WSJ vocabulary from %s", wsj_tokens)
+
+
+def add_count2vec_vocab(vocab, collection_dir, namespace="count2vec"):
+    """Add Count2Vec vocabulary."""
+    vocab_fn = os.path.join(collection_dir, "text.VOCAB")
+    next_index = 0
+    with open(vocab_fn) as f:
+      for line in f:
+        token, token_id = line.split()
+        while int(token_id) > next_index:
+          vocab.add_token_to_namespace("@@MISSING_{}@@".format(next_index), namespace)
+          next_index += 1
+        vocab.add_token_to_namespace(token, namespace)
+        assert vocab.get_token_index(token, namespace) == next_index + 2, (
+          "Error index of token ({}) not equal to expected ({})".format(
+            vocab.get_token_index(token, namespace), next_index + 2
+          )
+        )
+        next_index += 1
+    log.info("\tAdded vocabulary from CSTLM vocab: {}".format(vocab_fn))

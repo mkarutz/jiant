@@ -13,5 +13,8 @@ mkdir -p   ../log/edge/ontonotes/
 source ~/.bashrc
 source ../modules.sh
 source user_config.sh
+conda deactivate
+conda deactivate
 conda activate jiant
+
 python main.py --config_file config/edgeprobe/ontonotes/elmo-all.conf

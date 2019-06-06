@@ -8,7 +8,7 @@ from zlib import crc32
 from tqdm import tqdm
 
 def _serialize(examples, fd, flush_every):
-    for i, example in tqdm(enumerate(examples), "Serializing"):
+    for i, example in enumerate(examples):
         blob = pkl.dumps(example)
         encoded = base64.b64encode(blob)
         fd.write(encoded)

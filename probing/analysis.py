@@ -24,7 +24,7 @@ TASK_TO_DISPLAY_NAME = collections.OrderedDict(
     [
         ("pos-ontonotes", "Part-of-Speech"),
         ("nonterminal-ontonotes", "Constituents"),
-        ("dep-labeling-ewt", "Dependencies"),
+        ("dep-labelling-ewt", "Dependencies"),
         ("ner-ontonotes", "Entities"),
         ("srl-conll2012", "SRL"),
         ("coref-ontonotes-conll", "OntoNotes Coref."),

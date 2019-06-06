@@ -21,11 +21,12 @@ class Count2VecTokenEmbedder(TokenEmbedder):
     Count2Vec Embedder.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, embedding_dim: int) -> None:
         super(Count2VecTokenEmbedder, self).__init__()
+        self._embedding_dim = 2 * embedding_dim
 
     def get_output_dim(self):
-        return 100
+        return self._embedding_dim
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         assert inputs.is_cuda, "Inputs are not on CUDA device."

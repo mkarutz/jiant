@@ -262,22 +262,14 @@ class EdgeProbingTask(Task):
 # can group these in the code.
 ##
 
-register_task(
-    "edges-pos-test",
-    rel_path="edges/ontonotes/const/pos",
-    label_file="labels.txt",
-    files_by_split={
-        "train": "toy.json",
-        "val": "toy.json",
-        "test": "toy.json",
-    },
-    single_sided=True,
-)(EdgeProbingTask)
-
-
-##
+############################
 # Core probing tasks. as featured in the paper.
-##
+#############################
+
+#################
+# Ontonotes
+################
+
 # Part-of-Speech tagging on OntoNotes.
 register_task(
     "edges-pos-ontonotes",
@@ -343,19 +335,25 @@ register_task(
     is_symmetric=False,
 )(EdgeProbingTask)
 
-# Dependency edge labeling on English Web Treebank (UD).
+
+#################
+# Ontonotes
+################
+
+# Dependency edge labelling on English Web Treebank (UD).
 register_task(
-    "edges-dep-labeling-ewt",
+    "edges-dep-labelling-ewt",
     rel_path="edges/dep_ewt",
     label_file="labels.txt",
     files_by_split={
-        "train": "edges.train.json",
-        "val": "edges.dev.json",
-        "test": "edges.test.json",
+        "train": "en_ewt-ud-train.json",
+        "val": "en_ewt-ud-dev.json",
+        "test": "en_ewt-ud-test.json",
     },
     is_symmetric=False,
 )(EdgeProbingTask)
-# SRL CoNLL 2012 (OntoNotes), formulated as an edge-labeling task.
+
+# SRL CoNLL 2012 (OntoNotes), formulated as an edge-labelling task.
 register_task(
     "edges-srl-conll2012",
     rel_path="edges/ontonotes/srl",
@@ -367,6 +365,7 @@ register_task(
     },
     is_symmetric=False,
 )(EdgeProbingTask)
+
 # Re-processed version of edges-coref-ontonotes, via AllenNLP data loaders.
 register_task(
     "edges-coref-ontonotes-conll",
@@ -379,6 +378,7 @@ register_task(
     },
     is_symmetric=False,
 )(EdgeProbingTask)
+
 # SPR1, as an edge-labeling task (multilabel).
 register_task(
     "edges-spr1",
@@ -387,6 +387,7 @@ register_task(
     files_by_split={"train": "spr1.train.json", "val": "spr1.dev.json", "test": "spr1.test.json"},
     is_symmetric=False,
 )(EdgeProbingTask)
+
 # SPR2, as an edge-labeling task (multilabel).
 register_task(
     "edges-spr2",
@@ -399,18 +400,20 @@ register_task(
     },
     is_symmetric=False,
 )(EdgeProbingTask)
+
 # Definite pronoun resolution. Two labels.
 register_task(
     "edges-dpr",
     rel_path="edges/dpr",
     label_file="labels.txt",
     files_by_split={
-        "train": "edges.train.json",
-        "val": "edges.dev.json",
-        "test": "edges.test.json",
+        "train": "train.json",
+        "val": "dev.json",
+        "test": "test.json",
     },
     is_symmetric=False,
 )(EdgeProbingTask)
+
 # Relation classification on SemEval 2010 Task8. 19 labels.
 register_task(
     "edges-rel-semeval",

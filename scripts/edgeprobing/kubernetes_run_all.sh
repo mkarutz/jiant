@@ -88,7 +88,7 @@ declare -a ALL_TASKS
 ALL_TASKS+=( "spr1" )
 ALL_TASKS+=( "spr2" )
 ALL_TASKS+=( "dpr" )
-ALL_TASKS+=( "dep-labeling-ewt" )
+ALL_TASKS+=( "dep-labelling-ewt" )
 ALL_TASKS+=( "nonterminal-ontonotes" )
 ALL_TASKS+=( "pos-ontonotes" )
 ALL_TASKS+=( "ner-ontonotes" )

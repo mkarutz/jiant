@@ -71,6 +71,10 @@ def _get_instance_generator(task_name, split, preproc_dir, fraction=None):
     assert os.path.isfile(filename), "Record file '%s' not found!" % filename
     return serialize.read_records(filename, repeatable=True, fraction=fraction)
 
+def _index_worker(vocab, instance):
+    instance.index_fields(vocab)
+    del_field_tokens(instance)
+    return instance
 
 def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab, n_workers=12):
     """Yield indexed instances. Instances are modified in-place.
@@ -84,64 +88,12 @@ def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab, 
     Yields:
         Instance with indexed fields.
     """
-    from multiprocessing import Process, Queue
-
-    def do_producer(queue_in):
-        for instance in instance_iter:
-            queue_in.put(instance)
-        for _ in range(n_workers):
-            queue_in.put(None)
-
-    def do_consumer(queue_in, queue_out):
-        while True:
-            instance = queue_in.get()
-            if instance is None:
-                break
-            instance.index_fields(vocab)
-            del_field_tokens(instance)
-            queue_out.put(instance)
-        queue_out.put(None)
-
-    def do_logger(queue_in, queue_out):
-        progress = tqdm(None, "Processing")
-        done = 0
-        while done < n_workers:
-            instance = queue_in.get()
-            if instance is None:
-                done += 1
-            else:
-                queue_out.put(instance)
-                progress.update()
-        queue_out.put(None)
-
-    queue_in, queue_mid, queue_out = (
-        Queue(maxsize=(8 * n_workers)),
-        Queue(), 
-        Queue()
-    )
-
-    producer = Process(target=do_producer, args=(queue_in,))
-    consumers = [
-        Process(target=do_consumer, args=(queue_in, queue_mid)) for _ in range(n_workers)
-    ]
-    logger = Process(target=do_logger, args=(queue_mid, queue_out))
-
-    producer.start()
-    logger.start()
-    for consumer in consumers:
-        consumer.start()
-
-    while True:
-        instance = queue_out.get()
-        if instance is None:
-            break
-        else:
+    from multiprocessing import Pool
+    from functools import partial
+    map_fn = partial(_index_worker, vocab)
+    with Pool(n_workers) as pool:
+        for instance in tqdm(pool.imap_unordered(map_fn, instance_iter)):
             yield instance
-
-    for consumer in consumers:
-        consumer.join()
-    producer.join()
-    logger.join()
 
 
 def del_field_tokens(instance):
@@ -311,6 +263,7 @@ def build_indexers(args):
             "count2vec",
             collection_dir,
             reversed_collection_dir,
+            args.count2vec_dim,
         )
     if args.elmo:
         indexers["elmo"] = ELMoTokenCharactersIndexer("elmo")

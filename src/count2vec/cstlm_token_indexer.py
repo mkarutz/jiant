@@ -2,7 +2,7 @@ from typing import Dict, List
 import itertools
 import warnings
 import torch
-import pickle as pkl
+import pickle as pickle
 
 from overrides import overrides
 
@@ -21,50 +21,12 @@ from collections import deque
 import traceback
 from .BiCSTLM import BiCSTLM
 
-import scipy.sparse
-from sklearn.random_projection import GaussianRandomProjection
-import numpy as np
-
-
+################################################################
+# Global CSTLM object shared between multiprocessing processes #
+################################################################
 cstlm = None
-linear_projection = None
 
-
-class SparseVector:
-    def __init__(self, indices: List[int], values: List[float]) -> None:
-        self.indices: List[int] = indices
-        self.values: List[float] = values
-    
-    # def to_sparse(self):
-    #     return scipy.sparse.coo_matrix(
-    #         (self.values, ([0 for _ in self.indices], self.indices)), shape=(1, cstlm.size())
-    #     )
-    
-    # def to_dense(self):
-    #     return linear_projection.transform(self.to_sparse()).squeeze()
-
-
-class Count2VecToken:
-    def __init__(self, ppmi_next: SparseVector, ppmi_prev: SparseVector) -> None:
-        self.ppmi_next: SparseVector = ppmi_next
-        self.ppmi_prev: SparseVector = ppmi_prev
-
-    def to_array(self):
-        values = []
-        values.extend(self.ppmi_next.values)
-        values.extend(self.ppmi_prev.values)
-
-        columns = []
-        columns.extend(i for i in self.ppmi_next.indices)
-        columns.extend(i + cstlm.size() for i in self.ppmi_prev.indices)
-        
-        rows = [0 for _ in columns]
-
-        sparse = scipy.sparse.coo_matrix((values, (rows, columns)), shape=(1, 2 * cstlm.size()))
-
-        return linear_projection.transform(sparse).squeeze()
-
-
+### We need to monkey patch `TextField.as_tensor` to allow FloatTensors.
 def as_tensor_monkey_patch(self, padding_lengths: Dict[str, int]) -> Dict[str, torch.Tensor]:
     tensors = {}
     for indexer_name, indexer in self._token_indexers.items():
@@ -83,7 +45,8 @@ def as_tensor_monkey_patch(self, padding_lengths: Dict[str, int]) -> Dict[str, t
         )
         if indexer_name == "count2vec":
             indexer_tensors = {
-                key: torch.Tensor(array) for key, array in padded_array.items()
+                "count2vec_indices" : torch.LongTensor(padded_array["count2vec_indices"]),
+                "count2vec_values" : torch.FloatTensor(padded_array["count2vec_values"])
             }
         else:
             indexer_tensors = {
@@ -92,12 +55,18 @@ def as_tensor_monkey_patch(self, padding_lengths: Dict[str, int]) -> Dict[str, t
         tensors.update(indexer_tensors)
     return tensors
 
-
+### Do the monkey patching
 TextField.as_tensor = as_tensor_monkey_patch
 
 
 @TokenIndexer.register("count2vec")
-class Count2VecIndexer(TokenIndexer[Dict[str, np.array]]):
+class Count2VecIndexer(TokenIndexer[Dict[str, List]]):
+    """
+    This :class:`TokenIndexer` represents tokens as sparse row of ppmi values.
+
+    `tokens_to_indices` return two keys: "count2vec_indices" and "count2vec_values" reprenting the
+    column indices and values in the ppmi row.
+    """
     def __init__(
         self,
         namespace: str,
@@ -114,29 +83,21 @@ class Count2VecIndexer(TokenIndexer[Dict[str, np.array]]):
         global cstlm
         cstlm = BiCSTLM(collection_dir, reversed_collection_dir)
 
-        global linear_projection
-        if projection_weights_file is not None:
-            linear_projection = pkl.load(projection_weights_file)
-        else:
-            linear_projection = (
-                GaussianRandomProjection(2 * embedding_dim).fit(np.empty((1, 2 * cstlm.size())))
-            )
-
     @overrides
     def count_vocab_items(self, token: Token, counter: Dict[str, Dict[str, int]]):
         pass
 
     @overrides
     def get_keys(self, index_name: str) -> List[str]:
-        return [index_name]
+        return ["{}_indices".format(index_name), "{}_values".format(index_name)]
 
     @overrides
-    def get_padding_lengths(self, token: np.array) -> Dict[str, int]:
-        return {}
+    def get_padding_lengths(self, token: List) -> Dict[str, int]:
+        return {"non_zeros_per_row": len(token)}
 
     @overrides
-    def get_padding_token(self) -> np.array:
-        return np.zeros(2 * self._embedding_dim)
+    def get_padding_token(self) -> List:
+        return []
 
     @overrides
     def get_token_min_padding_length(self) -> int:
@@ -145,28 +106,28 @@ class Count2VecIndexer(TokenIndexer[Dict[str, np.array]]):
     @overrides
     def pad_token_sequence(
         self, 
-        tokens: Dict[str, List[np.array]], 
+        tokens: Dict[str, List[List]], 
         desired_num_tokens: Dict[str, int], 
-        padding_lengths: Dict[str, int]
-    ) -> Dict[str, List[np.array]]:
-        for key, value in tokens.items():
-            while len(value) < desired_num_tokens[key]:
-                value.append(self.get_padding_token())
-            while len(value) > desired_num_tokens[key]:
-                value.pop()
-        return tokens
+        padding_lengths: Dict[str, int],
+    ) -> Dict[str, List[List]]:
+        padded_tokens = {}
+        for key, token_list in tokens.items():
+            assert key in self.get_keys("count2vec")
+            # Pad the token list with empty lists
+            token_list = pad_sequence_to_length(
+                token_list, desired_num_tokens[key], default_value=self.get_padding_token
+            )
+            # Pad the lists with zeros
+            for i, token in enumerate(token_list):
+                token_list[i] = pad_sequence_to_length(token, padding_lengths["non_zeros_per_row"])
+            padded_tokens[key] = token_list
+        return padded_tokens
 
     @overrides
     def tokens_to_indices(
-        self,
-        tokens: List[Token],
-        vocabulary: Vocabulary,
-        index_name: str,
-    ) -> Dict[str, List[np.array]]:
-        ppmi_next_indices = []
-        ppmi_next_values = []
-        ppmi_prev_indices = []
-        ppmi_prev_values = []
+        self, tokens: List[Token], vocabulary: Vocabulary, index_name: str
+    ) -> Dict[str, List[List]]:
+        indices, values = [[] for _ in range(len(tokens))], [[] for _ in range(len(tokens))]
 
         def normalize(word):
             if word == "<SOS>":
@@ -179,22 +140,17 @@ class Count2VecIndexer(TokenIndexer[Dict[str, np.array]]):
         for i, token in enumerate(tokens):
             pattern.append(normalize(token.text))
             ppmi_next = cstlm.ppmi_next(pattern)
-            ppmi_next_indices.append(list(cstlm.word2id(word) for word in ppmi_next.keys()))
-            ppmi_next_values.append(list(ppmi_next.values()))
+            indices[i].extend(cstlm.word2id(word) for word in ppmi_next.keys())
+            values[i].extend(ppmi_next.values())
 
         pattern = deque()
         for i, token in reversed(list(enumerate(tokens))):
             pattern.appendleft(normalize(token.text))
             ppmi_prev = cstlm.ppmi_prev(pattern)
-            ppmi_prev_indices.append(list(cstlm.word2id(word) for word in ppmi_prev.keys()))
-            ppmi_prev_values.append(list(ppmi_prev.values()))
+            indices[i].extend(cstlm.size() + cstlm.word2id(word) for word in ppmi_prev.keys())
+            values[i].extend(ppmi_next.values())
 
-        ret = [
-            Count2VecToken(
-                SparseVector(ppmi_next_indices[i], ppmi_next_values[i]),
-                SparseVector(ppmi_prev_indices[i], ppmi_prev_values[i]),
-            ).to_array()
-            for i in range(len(tokens))
-        ]
-
-        return {index_name: ret}
+        return {
+            "{}_indices".format(index_name): indices,
+            "{}_values".format(index_name): values,
+        }

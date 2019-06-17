@@ -76,7 +76,7 @@ def _index_worker(vocab, instance):
     del_field_tokens(instance)
     return instance
 
-def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab, n_workers=12):
+def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab):
     """Yield indexed instances. Instances are modified in-place.
 
     TODO(iftenney): multiprocess the $%^& out of this.
@@ -91,10 +91,9 @@ def _indexed_instance_generator(instance_iter: Iterable[Type[Instance]], vocab, 
     from multiprocessing import Pool
     from functools import partial
     map_fn = partial(_index_worker, vocab)
-    with Pool(n_workers) as pool:
+    with Pool() as pool:
         for instance in tqdm(pool.imap_unordered(map_fn, instance_iter)):
             yield instance
-
 
 def del_field_tokens(instance):
     """ Save memory by deleting the tokens that will no longer be used.

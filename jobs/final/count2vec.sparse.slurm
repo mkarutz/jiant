@@ -7,7 +7,7 @@
 #SBATCH --partition=deeplearn
 #SBATCH --gres=gpu:v100:1
 #SBATCH -A punim0478
-#SBATCH -o log/final/count2vec/bi/%a.log
+#SBATCH -o log/final/count2vec/sparse/%a.log
 #SBATCH --array=0-19
 
 source ~/.bashrc
@@ -25,7 +25,7 @@ for probing_task in "spr2" "spr1" "dpr" "rel-semeval" "dep-labelling-ewt" "coref
 
 read -r -d '' overrides <<- EOF
     target_tasks = edges-${probing_task},
-    exp_name = final.count2vec.bi.${count2vec_dim}.${word_embs}.${probing_task},
+    exp_name = final.count2vec.sparse.${count2vec_dim}.${word_embs}.${probing_task},
     count2vec_dim = ${count2vec_dim},
     word_embs = ${word_embs},
     

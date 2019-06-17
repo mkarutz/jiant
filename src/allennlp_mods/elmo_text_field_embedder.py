@@ -106,15 +106,19 @@ class ElmoTextFieldEmbedder(TextFieldEmbedder):
         classifier_name: str = "@pretrain@",
         num_wrapping_dims: int = 0,
     ) -> torch.Tensor:
-        if self._token_embedders.keys() != text_field_input.keys():
-            message = "Mismatched token keys: %s and %s" % (
-                str(self._token_embedders.keys()),
-                str(text_field_input.keys()),
-            )
-            raise ConfigurationError(message)
+        # if self._token_embedders.keys() != text_field_input.keys():
+        #     message = "Mismatched token keys: %s and %s" % (
+        #         str(self._token_embedders.keys()),
+        #         str(text_field_input.keys()),
+        #     )
+        #     raise ConfigurationError(message)
         embedded_representations = []
         keys = sorted(text_field_input.keys())
         for key in keys:
+            # We handle count2vec indices as a special case below.
+            if key.startswith("count2vec"): 
+                continue
+
             tensor = text_field_input[key]
             # Note: need to use getattr here so that the pytorch voodoo
             # with submodules works with multiple GPUs.
@@ -142,6 +146,20 @@ class ElmoTextFieldEmbedder(TextFieldEmbedder):
 
             # optional projection step that we are ignoring.
             embedded_representations.append(token_vectors)
+
+        if "count2vec_indices" in keys and "count2vec_values" in keys:
+            count2vec_indices = text_field_input["count2vec_indices"]
+            count2vec_values = text_field_input["count2vec_values"]
+
+            # Note: need to use getattr here so that the pytorch voodoo
+            # with submodules works with multiple GPUs.
+            embedder = getattr(self, "token_embedder_{}".format("count2vec"))
+            for _ in range(num_wrapping_dims):
+                embedder = TimeDistributed(embedder)
+            token_vectors = embedder(count2vec_indices, count2vec_values)
+            # optional projection step that we are ignoring.
+            embedded_representations.append(token_vectors)
+
         return torch.cat(embedded_representations, dim=-1)
 
     @classmethod

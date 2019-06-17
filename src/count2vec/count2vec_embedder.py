@@ -20,17 +20,18 @@ class Count2VecTokenEmbedder(TokenEmbedder):
     """
     Count2Vec Embedder.
     """
-
-    def __init__(self, embedding_dim: int) -> None:
+    def __init__(self, vocab_size: int, embedding_dim: int) -> None:
         super(Count2VecTokenEmbedder, self).__init__()
-        self._embedding_dim = 2 * embedding_dim
+        self._embedding_dim = embedding_dim
+        self._embedder = torch.nn.Embedding(vocab_size * 2, embedding_dim)
 
     def get_output_dim(self):
         return self._embedding_dim
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        assert inputs.is_cuda, "Inputs are not on CUDA device."
-        return inputs
+    def forward(self, indices: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+        assert indices.is_cuda, "Indices are not on CUDA device."
+        assert values.is_cuda, "Values are not on CUDA device."
+        return torch.sum(self._embedder.forward(indices) * values.unsqueeze(-1), dim=-2)
 
     @classmethod
     def from_params(cls, params: Params):

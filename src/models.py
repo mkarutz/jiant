@@ -460,7 +460,8 @@ def build_embeddings(args, vocab, tasks, pretrained_embs=None):
 
     if args.count2vec:
         log.info("Using Count2Vec!")
-        count2vec_embedder = Count2VecTokenEmbedder(args.count2vec_dim)
+        from .count2vec.cstlm_token_indexer import cstlm
+        count2vec_embedder = Count2VecTokenEmbedder(cstlm.size(), args.count2vec_dim)
         d_emb += count2vec_embedder.get_output_dim()
         token_embedders["count2vec"] = count2vec_embedder
 
